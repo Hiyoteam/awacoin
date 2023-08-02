@@ -75,4 +75,13 @@ def transfer():
     #ok
     writeConf(config)
     return {"balance":config[acc]["balance"]}
+@app.route("/api/v1/getbalance")
+def getbalance():
+    acc=flask.request.args.get("account")
+    if not acc:
+        return {"error":"PARAM_LOSS"}
+    config=loadConf()
+    if acc not in config.keys():
+        return {"error":"NONEXT_ACCOUNT"}
+    return {"balance":config[acc]["balance"]}
 app.run(port=8888)
