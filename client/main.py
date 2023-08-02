@@ -1,4 +1,4 @@
-import requests,os,hashlib
+import requests,os,hashlib,sys
 def setup():
     print("正在运行setup程序")
     server=input("请输入awacoin服务器地址(以/结尾): ")
@@ -9,13 +9,12 @@ def setup():
         print("这不是一个有效的服务器。")
         exit(1)
     print("验证成功！")
-    with open(".awacoin_server","w+") as f:
-        f.write(server)
+
     print("正在创建awacoin账号...")
     try:
         data = requests.get(server+"api/v1/register").json()
         with open(".awacoin_wallet","w+") as f:
-            f.write(data["account"]+"+"+data["password"])
+            f.write(server+data["account"]+"+"+data["password"])
     except:
         print("账号创建失败！")
         exit(1)
@@ -34,16 +33,30 @@ def mine(server,acc,pwd,diff):
         print("ERR: INVAILD MINE")
         return
     return requests.post(server+"api/v1/mine/finish",data={"id":mineid,"answer":i}).json()
-if not os.path.exists(".awacoin_server") or not os.path.exists(".awacoin_wallet"):
-    print("未找到服务器/钱包文件")
+if not os.path.exists(".awacoin_wallet"):
+    print("未找到钱包文件")
     setup()
-with open(".awacoin_server","r") as f:
-    server=f.read()
+
 with open(".awacoin_wallet","r") as f:
-    acc,pwd=f.read().split("+")
+    server,acc,pwd=f.read().split("+")
 print("欢迎来到awacoin 命令行！")
+if len(sys.argv) > 1 and sys.argv[1] == "mine":
+    print("正在获得区块难度")
+    diff=requests.get(server+"/api/v1/get_chunk_diff").json()["diff"]
+    print("开始挖掘...")
+    while 1:
+        try:
+            result=mine(server,acc,pwd,diff)
+        except Exception as e:
+            print(f"失败: {e}")
+        else:
+            if result.get("error"):
+                print(f"失败: {result['error']}")
+            else:
+                print(f"当前余额: {result['balance']}")
+    exit(0)
 while 1:
-    op=input("(0) 挖掘\n(1) 获得我的钱包地址\n(2) 转账\n\n你的操作> ")
+    op=input("(0) 挖掘\n(1) 获得我的钱包地址\n(2) 转账\n(3) 获得余额\n\n你的操作> ")
     if op == "0":
         print("正在获得区块难度")
         diff=requests.get(server+"/api/v1/get_chunk_diff").json()["diff"]
@@ -52,12 +65,12 @@ while 1:
             try:
                 result=mine(server,acc,pwd,diff)
             except Exception as e:
-                print(f"Failed: {e}")
+                print(f"失败: {e}")
             else:
                 if result.get("error"):
-                    print(f"Failed: {result['error']}")
+                    print(f"失败: {result['error']}")
                 else:
-                    print(f"Current balance: {result['balance']}")
+                    print(f"当前余额: {result['balance']}")
     if op == "1":
         print(f"你的钱包地址:{acc}")
     if op == "2":
@@ -69,4 +82,13 @@ while 1:
             print(f"转账失败：{result['error']}")
         else:
             print(f"成功，转账后余额：{result['balance']}")
+    if op == "3":
+        wallet=input("钱包(留空为自己): ")
+        if not wallet:
+            wallet=acc
+        result=requests.get(server+"/api/v1/getbalance",params={"account":wallet}).json()
+        if result.get("error"):
+            print(f"获得失败：{result['error']}")
+        else:
+            print(f"余额：{result['balance']}")
     
