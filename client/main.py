@@ -14,7 +14,7 @@ def setup():
     try:
         data = requests.get(server+"api/v1/register").json()
         with open(".awacoin_wallet","w+") as f:
-            f.write(server+data["account"]+"+"+data["password"])
+            f.write(server+"+"+data["account"]+"+"+data["password"])
     except:
         print("账号创建失败！")
         exit(1)
