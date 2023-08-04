@@ -1,94 +1,87 @@
-import requests,os,hashlib,sys
-def setup():
-    print("正在运行setup程序")
-    server=input("请输入awacoin服务器地址(以/结尾): ")
-    print("正在验证...")
-    try:
-        assert requests.get(server+"api/v1/get_chunk_diff").json()["diff"] > 1
-    except:
-        print("这不是一个有效的服务器。")
-        exit(1)
-    print("验证成功！")
-
-    print("正在创建awacoin账号...")
-    try:
-        data = requests.get(server+"api/v1/register").json()
-        with open(".awacoin_wallet","w+") as f:
-            f.write(server+"+"+data["account"]+"+"+data["password"])
-    except:
-        print("账号创建失败！")
-        exit(1)
-def mine(server,acc,pwd,diff):
-    mine=requests.post(server+"api/v1/mine/create",data={"account":acc,"password":pwd}).json()
-    mineid=mine["id"]
-    salt=mine["salt"]
-    md5=mine["hash"]
-    result=None
-    for i in range(0,diff+1):
-        if hashlib.sha512((str(i)+salt).encode("utf-8")).hexdigest()[:384] == md5:
-            result=i
-            print(f"Chunk result: {result}")
-            break
-    if not result:
-        print("ERR: INVAILD MINE")
-        return
-    return requests.post(server+"api/v1/mine/finish",data={"id":mineid,"answer":i}).json()
-if not os.path.exists(".awacoin_wallet"):
-    print("未找到钱包文件")
-    setup()
-
-with open(".awacoin_wallet","r") as f:
-    server,acc,pwd=f.read().split("+")
-print("欢迎来到awacoin 命令行！")
-if len(sys.argv) > 1 and sys.argv[1] == "mine":
-    print("正在获得区块难度")
-    diff=requests.get(server+"/api/v1/get_chunk_diff").json()["diff"]
-    print("开始挖掘...")
-    while 1:
-        try:
-            result=mine(server,acc,pwd,diff)
-        except Exception as e:
-            print(f"失败: {e}")
-        else:
-            if result.get("error"):
-                print(f"失败: {result['error']}")
-            else:
-                print(f"当前余额: {result['balance']}")
-    exit(0)
-while 1:
-    op=input("(0) 挖掘\n(1) 获得我的钱包地址\n(2) 转账\n(3) 获得余额\n\n你的操作> ")
-    if op == "0":
-        print("正在获得区块难度")
-        diff=requests.get(server+"/api/v1/get_chunk_diff").json()["diff"]
-        print("开始挖掘...")
-        while 1:
-            try:
-                result=mine(server,acc,pwd,diff)
-            except Exception as e:
-                print(f"失败: {e}")
-            else:
-                if result.get("error"):
-                    print(f"失败: {result['error']}")
-                else:
-                    print(f"当前余额: {result['balance']}")
-    if op == "1":
-        print(f"你的钱包地址:{acc}")
-    if op == "2":
-        dest=input("目标钱包：")
-        amount=input("数量：")
-        amount=float(amount)
-        result=requests.post(server+"/api/v1/transfer",data={"account":acc,"password":pwd,"to":dest,"amount":amount}).json()
-        if result.get("error"):
-            print(f"转账失败：{result['error']}")
-        else:
-            print(f"成功，转账后余额：{result['balance']}")
-    if op == "3":
-        wallet=input("钱包(留空为自己): ")
-        if not wallet:
-            wallet=acc
-        result=requests.get(server+"/api/v1/getbalance",params={"account":wallet}).json()
-        if result.get("error"):
-            print(f"获得失败：{result['error']}")
-        else:
-            print(f"余额：{result['balance']}")
-    
+import hashlib,flask,json,random,secrets,uuid
+mines={}
+def loadConf(file="datas.json"):
+    with open(file,"r",encoding="utf-8") as f:
+        return json.load(f)
+def writeConf(config,file="datas.json"):
+    with open(file,"w+",encoding="utf-8") as f:
+        json.dump(config,f)
+app=flask.Flask("awaCoin")
+server_config = loadConf("config.json")
+@app.route("/api/v1/get_chunk_diff")
+def chunkdiff():
+    return {"diff":server_config["chunk_diff"]}
+@app.route("/api/v1/register")
+def register():
+    account=secrets.token_hex(32)
+    key=secrets.token_urlsafe(128)
+    config=loadConf()
+    config.update({account:{"token":key,"balance":0}})
+    writeConf(config)
+    return {"account":account,"password":key}
+@app.route("/api/v1/mine/create",methods=["POST"])
+def create_mine():
+    global mines
+    # 检查钱包
+    acc,pwd=flask.request.form.get("account"),flask.request.form.get("password")
+    if not acc or not pwd:
+        return {"error":"ERR_ACC_PWD_REQUIRED"}
+    config=loadConf()
+    if acc not in config.keys():
+        return {"error":"ACC_DOES_NOT_EXISTS"}
+    if pwd != config[acc]["token"]:
+        return {"error":"PWD_WRONG"}
+    mine_id=str(uuid.uuid4())
+    value=random.randint(0,server_config["chunk_diff"])
+    salt=secrets.token_urlsafe(32)
+    target=acc
+    # 生成hash
+    hash_value=hashlib.sha512((str(value)+salt).encode("utf-8")).hexdigest()[:450]
+    mines.update({mine_id:{
+        "value":value,
+        "target":target
+    }})
+    return {"hash":hash_value,"salt":salt,"id":mine_id}
+@app.route("/api/v1/mine/finish",methods=["POST"])
+def finish_mine():
+    global mines
+    mineid=flask.request.form.get("id")
+    answer=flask.request.form.get("answer")
+    if mineid not in mines.keys():
+        return {"error":"NONEXT"}
+    if str(answer) != str(mines[mineid]["value"]):
+        return {"error":"MINE_FAILED"}
+    #挖对啦！
+    config=loadConf()
+    config[mines[mineid]["target"]]["balance"]+=server_config["mine_interval"]
+    writeConf(config)
+    return {"balance":config[mines[mineid]["target"]]["balance"]}
+@app.route("/api/v1/transfer",methods=["POST"])
+def transfer():
+    acc,pwd,to,amount=flask.request.form.get("account"),flask.request.form.get("password"),flask.request.form.get("to"),flask.request.form.get("amount")
+    if not acc or not pwd or not to or not amount:
+        return {"error":"PARAM_LOSS"}
+    amount=float(amount)
+    config=loadConf()
+    if acc not in config.keys() or to not in config.keys():
+        return {"error":"NONEXT_ACCOUNT"}
+    if pwd != config[acc]["token"]:
+        return {"error":"WRONG_PWD"}
+    if amount > config[acc]["balance"]:
+        return {"error":"NO_ENOUGH_BALANCE"}
+    #do it do it!
+    config[acc]["balance"]-=amount
+    config[to]["balance"]+=amount
+    #ok
+    writeConf(config)
+    return {"balance":config[acc]["balance"]}
+@app.route("/api/v1/getbalance")
+def getbalance():
+    acc=flask.request.args.get("account")
+    if not acc:
+        return {"error":"PARAM_LOSS"}
+    config=loadConf()
+    if acc not in config.keys():
+        return {"error":"NONEXT_ACCOUNT"}
+    return {"balance":config[acc]["balance"]}
+app.run(port=8888)
