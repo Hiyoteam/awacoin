@@ -25,7 +25,7 @@ def mine(server,acc,pwd,diff):
     md5=mine["hash"]
     result=None
     for i in range(0,diff+1):
-        if hashlib.md5((str(i)+salt).encode("utf-8")).hexdigest() == md5:
+        if hashlib.sha512((str(i)+salt).encode("utf-8")).hexdigest()[:384] == md5:
             result=i
             print(f"Chunk result: {result}")
             break
