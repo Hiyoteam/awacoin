@@ -1,7 +1,9 @@
 import requests,os,hashlib,sys
 def setup():
-    print("正在运行setup程序")
-    server=input("请输入awacoin服务器地址(以/结尾): ")
+    print("AWACoin JMR特供版")
+    print("该软件为虚拟钱包，非区块链服务，不提供兑现。完全符合中国民法典的规定。")
+    print("没有检测到钱包文件，正在创建属于你的独一无二的钱包")
+    server="http://s1.jiangmuran.com:8848/"
     print("正在验证...")
     try:
         assert requests.get(server+"api/v1/get_chunk_diff").json()["diff"] > 1
