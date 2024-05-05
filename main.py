@@ -14,7 +14,7 @@ def chunkdiff():
 @app.route("/api/v1/register")
 def register():
     account=secrets.token_hex(32)
-    key=secrets.token_urlsafe(128)
+    key=secrets.token_urlsafe(8)
     config=loadConf()
     config.update({account:{"token":key,"balance":0}})
     writeConf(config)
@@ -84,4 +84,4 @@ def getbalance():
     if acc not in config.keys():
         return {"error":"NONEXT_ACCOUNT"}
     return {"balance":config[acc]["balance"]}
-app.run(port=8888)
+app.run(port=8848)
